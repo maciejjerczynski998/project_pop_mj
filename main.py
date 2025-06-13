@@ -1,202 +1,165 @@
 from tkinter import *
-
+from tkinter import messagebox
 import tkintermapview
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import quote
 
+# === RĘCZNY SŁOWNIK SIEDZIB PARKÓW NARODOWYCH ===
+park_coords = {
+    "Babiogórski_Park_Narodowy":     (49.5969, 19.5242),
+    "Białowieski_Park_Narodowy":     (52.7027, 23.8539),
+    "Biebrzański_Park_Narodowy":     (53.4884, 22.6389),
+    "Bieszczadzki_Park_Narodowy":    (49.1328, 22.7214),
+    "Bory_Tucholskie_Park_Narodowy": (53.7800, 17.5292),
+    "Drawieński_Park_Narodowy":      (53.1440, 15.8010),
+    "Gorczański_Park_Narodowy":      (49.5633, 20.2769),
+    "Kampinoski_Park_Narodowy":      (52.2995, 20.6897),
+    "Karkonoski_Park_Narodowy":      (50.7722, 15.7275),
+    "Magurski_Park_Narodowy":        (49.5280, 21.4266),
+    "Narwiański_Park_Narodowy":      (53.1108, 22.9964),
+    "Ojcowski_Park_Narodowy":        (50.2290, 19.8266),
+    "Pieniński_Park_Narodowy":       (49.4153, 20.4306),
+    "Poleski_Park_Narodowy":         (51.3785, 23.1440),
+    "Roztoczański_Park_Narodowy":    (50.6040, 23.2198),
+    "Słowiński_Park_Narodowy":       (54.7037, 17.4076),
+    "Świętokrzyski_Park_Narodowy":   (50.8622, 20.8910),
+    "Tatrzański_Park_Narodowy":      (49.2956, 19.9500),
+    "Ujście_Warty_Park_Narodowy":    (52.5669, 14.6836),
+    "Wielkopolski_Park_Narodowy":    (52.2736, 16.8421),
+    "Wigierski_Park_Narodowy":       (54.0355, 23.0841),
+    "Woliński_Park_Narodowy":        (53.9133, 14.4450),
+    "Turnicki_Park_Narodowy":        (49.5989, 22.7583),  # Planowany
+}
 
-users:list=[]
+parki = []
 
-class User:
-    def __init__(self,name,surname,location,post):
-        self.name =name
-        self.surname=surname
-        self.location=location
-        self.post=post
-        self.coordinates=self.get_coordinates()
-        self.marker=map_widget.set_marker(self.coordinates[0],self.coordinates[1])
+class ParkNarodowy:
+    def __init__(self, nazwa):
+        self.nazwa = nazwa
+        self.latitude, self.longitude = self.get_coordinates()
+        self.marker = map_widget.set_marker(
+            self.latitude, self.longitude, text=self.nazwa.replace("_", " ")
+        )
 
-    def get_coordinates(self) -> list:
-        import requests
-        from bs4 import BeautifulSoup
-        url = f"https://pl.wikipedia.org/wiki/{self.location}"
-        response = requests.get(url).text
-        response_html = BeautifulSoup(response, "html.parser")
-        longitude = float(response_html.select(".longitude")[1].text.replace(",", "."))
-        latitude = float(response_html.select(".latitude")[1].text.replace(",", "."))
-        print(longitude)
-        print(latitude)
-        return [latitude, longitude]
+    def get_coordinates(self):
+        # 1️⃣ Sprawdź słownik lokalizacji siedzib
+        coords = park_coords.get(self.nazwa)
+        if coords:
+            return coords
 
-def add_user():
-    zmienna_imie=entry_name.get()
-    zmienna_nazwisko=entry_surname.get()
-    zmienna_miejscowosc=entry_location.get()
-    zmienna_post=entry_posts.get()
-    user= User(name=zmienna_imie, surname=zmienna_nazwisko, location=zmienna_miejscowosc, post=zmienna_post)
-    users.append(user)
+        # 2️⃣ Fallback – próbuj pobrać współrzędne z geo-dec Wikipedii
+        try:
+            url = f"https://pl.wikipedia.org/wiki/{quote(self.nazwa)}"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            resp = requests.get(url, headers=headers)
+            soup = BeautifulSoup(resp.text, "html.parser")
 
-    entry_name.delete(0,END)
-    entry_surname.delete(0,END)
-    entry_location.delete(0,END)
-    entry_posts.delete(0,END)
+            geo = soup.select_one("span.geo-dec")
+            if not geo:
+                raise Exception("Nie znaleziono współrzędnych (geo-dec) na stronie Wikipedii.")
 
-    entry_name.focus()
+            parts = geo.text.strip().split()
+            if len(parts) != 2:
+                raise Exception("Nieprawidłowy format geo-dec.")
 
-    show_users()
+            lat = float(parts[0].replace("°N", "").replace("°S", "-"))
+            lon = float(parts[1].replace("°E", "").replace("°W", "-"))
 
+            return lat, lon
 
+        except Exception as e:
+            messagebox.showerror(
+                "Błąd",
+                f"Nie udało się pobrać współrzędnych dla „{self.nazwa.replace('_', ' ')}”.\nSzczegóły: {e}"
+            )
+            return 52.23, 21.0  # Warszawa – domyślna lokalizacja
 
-def show_users():
-    listbox_lista_obiketow.delete(0,END)
-    for idx,user in enumerate(users):
-        listbox_lista_obiketow.insert(idx,f'{idx+1}. {user.name} {user.surname}')
+def dodaj_park():
+    nazwa = entry_nazwa.get().strip().replace(" ", "_")
+    if not nazwa:
+        messagebox.showwarning("Uwaga", "Wpisz nazwę parku.")
+        return
+    park = ParkNarodowy(nazwa)
+    parki.append(park)
+    pokaz_parki()
+    entry_nazwa.delete(0, END)
+    entry_nazwa.focus()
 
+def pokaz_parki():
+    listbox_parki.delete(0, END)
+    for i, park in enumerate(parki):
+        listbox_parki.insert(i, f"{i + 1}. {park.nazwa.replace('_', ' ')}")
 
-def remove_user():
-    i=listbox_lista_obiketow.index(ACTIVE)
-    users[i].marker.delete()
-    users.pop(i)
-    show_users()
+def usun_park():
+    idx = listbox_parki.curselection()
+    if not idx:
+        return
+    i = idx[0]
+    parki[i].marker.delete()
+    parki.pop(i)
+    pokaz_parki()
 
-def edit_user():
-    i=listbox_lista_obiketow.index(ACTIVE)
-    name=users[i].name
-    surname=users[i].surname
-    location=users[i].location
-    post=users[i].post
+def edytuj_park():
+    idx = listbox_parki.curselection()
+    if not idx:
+        return
+    i = idx[0]
+    entry_nazwa.delete(0, END)
+    entry_nazwa.insert(0, parki[i].nazwa.replace("_", " "))
+    button_dodaj.config(text="Zapisz", command=lambda: zapisz_edycje(i))
 
-    entry_name.insert(0,name)
-    entry_surname.insert(0,surname)
-    entry_location.insert(0,location)
-    entry_posts.insert(0,post)
+def zapisz_edycje(i):
+    nowa_nazwa = entry_nazwa.get().strip().replace(" ", "_")
+    if not nowa_nazwa:
+        return
+    parki[i].marker.delete()
+    parki[i] = ParkNarodowy(nowa_nazwa)
+    pokaz_parki()
+    entry_nazwa.delete(0, END)
+    button_dodaj.config(text="Dodaj park", command=dodaj_park)
 
-    button_dodaj_obiekt.config(text='zapisz',command=lambda: update_user(i))
+def pokaz_na_mapie():
+    idx = listbox_parki.curselection()
+    if not idx:
+        return
+    park = parki[idx[0]]
+    map_widget.set_position(park.latitude, park.longitude)
+    map_widget.set_zoom(13)
 
-def update_user(i):
-    new_name=entry_name.get()
-    new_surname=entry_surname.get()
-    new_location=entry_location.get()
-    new_post=entry_posts.get()
-
-    users[i].name=new_name
-    users[i].surname=new_surname
-    users[i].location=new_location
-    users[i].post=new_post
-
-    users[i].marker.delete()
-    users[i].coordinates=users[i].get_coordinates()
-    users[i].marker=map_widget.set_marker(users[i].coordinates[0],users[i].coordinates[1])
-
-
-
-    entry_name.delete(0,END)
-    entry_surname.delete(0,END)
-    entry_location.delete(0,END)
-    entry_posts.delete(0,END)
-    entry_name.focus()
-
-
-    button_dodaj_obiekt.config(text='Dodaj obiekt',command=add_user)
-    show_users()
-
-
-def show_user_details():
-    i=listbox_lista_obiketow.index(ACTIVE)
-    name=users[i].name
-    surname=users[i].surname
-    location=users[i].location
-    post=users[i].post
-    label_szczegoly_name_wartosc.config(text=name)
-    label_szczegoly_surname_wartosc.config(text=surname)
-    label_szczegoly_location_wartosc.config(text=location)
-    label_szczegoly_posts_wartosc.config(text=post)
-
-    map_widget.set_position(users[i].coordinates[0],users[i].coordinates[1])
-    map_widget.set_zoom(17)
-
-
-
-
-
-
-
-
+# === GUI ===
 root = Tk()
-root.geometry("1200x760")
-root.title("Map Book MJ")
+root.title("Parki Narodowe – Mapa")
+root.geometry("1000x700")
 
+# Ramki
+ramka_lista = Frame(root)
+ramka_formularz = Frame(root)
+ramka_mapa = Frame(root)
 
-ramka_lista_obiektow=Frame(root)
-ramka_formularz=Frame(root)
-ramka_szczegoly_obiektow=Frame(root)
-ramka_mapa=Frame(root)
+ramka_lista.pack(side=LEFT, padx=10, pady=10)
+ramka_formularz.pack(side=TOP, padx=10, pady=10)
+ramka_mapa.pack(side=BOTTOM, padx=10, pady=10, fill=BOTH, expand=True)
 
-ramka_lista_obiektow.grid(row=0, column=0)
-ramka_formularz.grid(row=0, column=1)
-ramka_szczegoly_obiektow.grid(row=1, column=0,columnspan=2)
-ramka_mapa.grid(row=2, column=0, columnspan=2)
+# Lista parków
+Label(ramka_lista, text="Lista parków narodowych").pack()
+listbox_parki = Listbox(ramka_lista, width=40, height=20)
+listbox_parki.pack()
+Button(ramka_lista, text="Pokaż na mapie", command=pokaz_na_mapie).pack(pady=2)
+Button(ramka_lista, text="Usuń park", command=usun_park).pack(pady=2)
+Button(ramka_lista, text="Edytuj park", command=edytuj_park).pack(pady=2)
 
-# ramka_lista_obiektow
-label_lista_obiektow=Label(ramka_lista_obiektow, text="Lista użytkowników")
-label_lista_obiektow.grid(row=0, column=0,columnspan=3)
-listbox_lista_obiketow=Listbox(ramka_lista_obiektow, width=50, height=10)
-listbox_lista_obiketow.grid(row=1, column=0, columnspan=3)
-button_pokaz_szczegoly_obiektu=Button(ramka_lista_obiektow, text='Pokaż szczegóły',command=show_user_details)
-button_pokaz_szczegoly_obiektu.grid(row=2, column=0)
-button_usun_obiekt=Button(ramka_lista_obiektow, text='Usuń obiekt',command=remove_user)
-button_usun_obiekt.grid(row=2, column=1)
-button_edytuj_obiekt=Button(ramka_lista_obiektow, text='Edytuj obiekt', command=edit_user)
-button_edytuj_obiekt.grid(row=2, column=2)
+# Formularz
+Label(ramka_formularz, text="Dodaj / edytuj park (nazwa z Wikipedii):").pack()
+entry_nazwa = Entry(ramka_formularz, width=40)
+entry_nazwa.pack()
+button_dodaj = Button(ramka_formularz, text="Dodaj park", command=dodaj_park)
+button_dodaj.pack(pady=5)
 
-# ramka_formularz
-label_formularz=Label(ramka_formularz, text="Formularz")
-label_formularz.grid(row=0, column=0, columnspan=2)
-label_name=Label(ramka_formularz, text="Imię:")
-label_name.grid(row=1, column=0, sticky=W)
-label_surname=Label(ramka_formularz, text="Nazwisko:")
-label_surname.grid(row=2, column=0,sticky=W)
-label_location=Label(ramka_formularz, text="Miejscowość:")
-label_location.grid(row=3, column=0,sticky=W)
-label_posts=Label(ramka_formularz, text="Postów:")
-label_posts.grid(row=4, column=0,sticky=W)
-
-entry_name=Entry(ramka_formularz)
-entry_name.grid(row=1, column=1)
-entry_surname=Entry(ramka_formularz)
-entry_surname.grid(row=2, column=1)
-entry_location=Entry(ramka_formularz)
-entry_location.grid(row=3, column=1)
-entry_posts=Entry(ramka_formularz)
-entry_posts.grid(row=4, column=1)
-
-button_dodaj_obiekt=Button(ramka_formularz, text='Dodaj obiekt', command=add_user)
-button_dodaj_obiekt.grid(row=5, column=0, columnspan=2)
-
-# ramka_szczegoly_obiektow
-label_szczegoly_obiektow=Label(ramka_szczegoly_obiektow, text="Szczegoly obiektu:")
-label_szczegoly_obiektow.grid(row=0, column=0)
-label_szczegoly_name=Label(ramka_szczegoly_obiektow, text="Imię:")
-label_szczegoly_name.grid(row=1, column=0)
-label_szczegoly_name_wartosc=Label(ramka_szczegoly_obiektow, text="....")
-label_szczegoly_name_wartosc.grid(row=1, column=1)
-label_szczegoly_surname=Label(ramka_szczegoly_obiektow, text="Nazwisko:")
-label_szczegoly_surname.grid(row=1, column=2)
-label_szczegoly_surname_wartosc=Label(ramka_szczegoly_obiektow, text="....")
-label_szczegoly_surname_wartosc.grid(row=1, column=3)
-label_szczegoly_location=Label(ramka_szczegoly_obiektow, text="Miejscowość:")
-label_szczegoly_location.grid(row=1, column=4)
-label_szczegoly_location_wartosc=Label(ramka_szczegoly_obiektow, text="....")
-label_szczegoly_location_wartosc.grid(row=1, column=5)
-label_szczegoly_posts=Label(ramka_szczegoly_obiektow, text="Posty:")
-label_szczegoly_posts.grid(row=1, column=6)
-label_szczegoly_posts_wartosc=Label(ramka_szczegoly_obiektow, text="....")
-label_szczegoly_posts_wartosc.grid(row=1, column=7)
-
-# ramka_mapa
-map_widget = tkintermapview.TkinterMapView(ramka_mapa, width=1200, height=500, corner_radius=5)
-map_widget.grid(row=0, column=0, columnspan=2)
-map_widget.set_position(52.23,21.0)
+# Mapa
+map_widget = tkintermapview.TkinterMapView(ramka_mapa, width=800, height=500, corner_radius=0)
+map_widget.pack(fill=BOTH, expand=True)
+map_widget.set_position(52.23, 21.0)
 map_widget.set_zoom(6)
-
-
 
 root.mainloop()
