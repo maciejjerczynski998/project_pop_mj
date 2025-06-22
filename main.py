@@ -33,7 +33,8 @@ park_coords = {
 }
 
 parki = []
-park_pracownicy = {}  # nazwa_parku -> lista obiektów Pracownik
+park_pracownicy = {}
+park_klienci = {}
 
 class ParkNarodowy:
     def __init__(self, nazwa):
@@ -41,7 +42,7 @@ class ParkNarodowy:
         self.latitude, self.longitude = park_coords.get(self.nazwa, (52.23, 21.0))
         self.marker = map_widget.set_marker(self.latitude, self.longitude, text=self.nazwa.replace("_", " "))
 
-class Pracownik:
+class Osoba:
     def __init__(self, imie_nazwisko, miasto, nazwa_parku):
         self.imie_nazwisko = imie_nazwisko
         self.miasto = miasto
@@ -59,7 +60,132 @@ class Pracownik:
         except:
             return 52.23, 21.0
 
-# === FUNKCJE PARKÓW ===
+class Pracownik(Osoba): pass
+class Klient(Osoba): pass
+
+def otworz_panel_osob(nazwa_typu, typ_klasy, baza_danych):
+    idx = listbox_parki.curselection()
+    if not idx:
+        return
+    park = parki[idx[0]]
+    nazwa_parku = park.nazwa
+    if nazwa_parku not in baza_danych:
+        baza_danych[nazwa_parku] = []
+
+    okno = Toplevel(root)
+    okno.title(f"{nazwa_typu} – {nazwa_parku.replace('_', ' ')}")
+    okno.geometry("400x550")
+
+    listbox = Listbox(okno, width=50, height=15)
+    listbox.pack()
+
+    def odswiez():
+        listbox.delete(0, END)
+        for i, o in enumerate(baza_danych[nazwa_parku]):
+            listbox.insert(i, f"{i+1}. {o.imie_nazwisko} – {o.miasto}")
+
+    def dodaj():
+        imie = entry_imie.get().strip()
+        miasto = entry_miasto.get().strip()
+        if not imie or not miasto:
+            return
+        osoba = typ_klasy(imie, miasto, nazwa_parku)
+        baza_danych[nazwa_parku].append(osoba)
+        odswiez()
+        entry_imie.delete(0, END)
+        entry_miasto.delete(0, END)
+
+    def usun():
+        sel = listbox.curselection()
+        if not sel:
+            return
+        i = sel[0]
+        if baza_danych[nazwa_parku][i].marker:
+            baza_danych[nazwa_parku][i].marker.delete()
+        baza_danych[nazwa_parku].pop(i)
+        odswiez()
+
+    def edytuj():
+        sel = listbox.curselection()
+        if not sel:
+            return
+        i = sel[0]
+        osoba = baza_danych[nazwa_parku][i]
+        entry_imie.delete(0, END)
+        entry_imie.insert(0, osoba.imie_nazwisko)
+        entry_miasto.delete(0, END)
+        entry_miasto.insert(0, osoba.miasto)
+        button_dodaj.config(text="Zapisz", command=lambda: zapisz(i))
+
+    def zapisz(i):
+        imie = entry_imie.get().strip()
+        miasto = entry_miasto.get().strip()
+        if not imie or not miasto:
+            return
+        if baza_danych[nazwa_parku][i].marker:
+            baza_danych[nazwa_parku][i].marker.delete()
+        baza_danych[nazwa_parku][i] = typ_klasy(imie, miasto, nazwa_parku)
+        odswiez()
+        entry_imie.delete(0, END)
+        entry_miasto.delete(0, END)
+        button_dodaj.config(text=f"Dodaj {nazwa_typu.lower()}", command=dodaj)
+
+    def pokaz_na_mapie_wszystkich():
+        osoby = baza_danych[nazwa_parku]
+        if not osoby:
+            return
+        for o in osoby:
+            if o.marker:
+                o.marker.delete()
+            o.marker = map_widget.set_marker(o.latitude, o.longitude, text=f"{o.imie_nazwisko}\n({o.miasto})")
+        lat = sum(o.latitude for o in osoby) / len(osoby)
+        lon = sum(o.longitude for o in osoby) / len(osoby)
+        map_widget.set_position(lat, lon)
+        map_widget.set_zoom(8)
+
+    entry_imie = Entry(okno, width=40)
+    entry_imie.pack()
+    entry_imie.insert(0, "Imię i nazwisko")
+
+    entry_miasto = Entry(okno, width=40)
+    entry_miasto.pack()
+    entry_miasto.insert(0, "Miasto")
+
+    button_dodaj = Button(okno, text=f"Dodaj {nazwa_typu.lower()}", command=dodaj)
+    button_dodaj.pack(pady=2)
+
+    Button(okno, text=f"Usuń {nazwa_typu.lower()}", command=usun).pack(pady=2)
+    Button(okno, text=f"Edytuj {nazwa_typu.lower()}", command=edytuj).pack(pady=2)
+    Button(okno, text="Pokaż wszystkich na mapie", command=pokaz_na_mapie_wszystkich).pack(pady=4)
+
+    odswiez()
+
+# === OPERACJE PARKÓW ===
+def dodaj_park():
+    nazwa = entry_nazwa.get().strip().replace(" ", "_")
+    if not nazwa:
+        return
+    park = ParkNarodowy(nazwa)
+    parki.append(park)
+    park_pracownicy[nazwa] = []
+    park_klienci[nazwa] = []
+    pokaz_parki()
+    entry_nazwa.delete(0, END)
+    entry_nazwa.focus()
+
+def pokaz_parki():
+    listbox_parki.delete(0, END)
+    for i, park in enumerate(parki):
+        listbox_parki.insert(i, f"{i+1}. {park.nazwa.replace('_', ' ')}")
+
+def pokaz_na_mapie():
+    idx = listbox_parki.curselection()
+    if not idx:
+        return
+    park = parki[idx[0]]
+    map_widget.set_position(park.latitude, park.longitude)
+    map_widget.set_zoom(13)
+
 def usun_park():
     idx = listbox_parki.curselection()
     if not idx:
@@ -69,10 +195,14 @@ def usun_park():
     for p in park_pracownicy.get(park.nazwa, []):
         if p.marker:
             p.marker.delete()
+    for k in park_klienci.get(park.nazwa, []):
+        if k.marker:
+            k.marker.delete()
     if park.marker:
         park.marker.delete()
     parki.pop(i)
     park_pracownicy.pop(park.nazwa, None)
+    park_klienci.pop(park.nazwa, None)
     pokaz_parki()
 
 def edytuj_park():
@@ -93,131 +223,14 @@ def zapisz_edycje(i):
         parki[i].marker.delete()
     parki[i] = ParkNarodowy(nowa_nazwa)
     park_pracownicy[nowa_nazwa] = park_pracownicy.pop(stara_nazwa, [])
+    park_klienci[nowa_nazwa] = park_klienci.pop(stara_nazwa, [])
     pokaz_parki()
     entry_nazwa.delete(0, END)
     button_dodaj.config(text="Dodaj park", command=dodaj_park)
-def dodaj_park():
-    nazwa = entry_nazwa.get().strip().replace(" ", "_")
-    if not nazwa:
-        return
-    park = ParkNarodowy(nazwa)
-    parki.append(park)
-    park_pracownicy[nazwa] = []
-    pokaz_parki()
-    entry_nazwa.delete(0, END)
-    entry_nazwa.focus()
-
-def pokaz_parki():
-    listbox_parki.delete(0, END)
-    for i, park in enumerate(parki):
-        listbox_parki.insert(i, f"{i+1}. {park.nazwa.replace('_', ' ')}")
-
-def pokaz_na_mapie():
-    idx = listbox_parki.curselection()
-    if not idx:
-        return
-    park = parki[idx[0]]
-    map_widget.set_position(park.latitude, park.longitude)
-    map_widget.set_zoom(13)
-
-def otworz_panel_pracownikow():
-    idx = listbox_parki.curselection()
-    if not idx:
-        return
-    park = parki[idx[0]]
-    nazwa_parku = park.nazwa
-
-    okno = Toplevel(root)
-    okno.title(f"Pracownicy – {nazwa_parku.replace('_', ' ')}")
-    okno.geometry("400x550")
-
-    listbox = Listbox(okno, width=50, height=15)
-    listbox.pack()
-
-    def odswiez():
-        listbox.delete(0, END)
-        for i, p in enumerate(park_pracownicy[nazwa_parku]):
-            listbox.insert(i, f"{i+1}. {p.imie_nazwisko} – {p.miasto}")
-
-    def dodaj():
-        imie = entry_imie.get().strip()
-        miasto = entry_miasto.get().strip()
-        if not imie or not miasto:
-            return
-        p = Pracownik(imie, miasto, nazwa_parku)
-        park_pracownicy[nazwa_parku].append(p)
-        odswiez()
-        entry_imie.delete(0, END)
-        entry_miasto.delete(0, END)
-
-    def usun():
-        sel = listbox.curselection()
-        if not sel:
-            return
-        i = sel[0]
-        if park_pracownicy[nazwa_parku][i].marker:
-            park_pracownicy[nazwa_parku][i].marker.delete()
-        park_pracownicy[nazwa_parku].pop(i)
-        odswiez()
-
-    def edytuj():
-        sel = listbox.curselection()
-        if not sel:
-            return
-        i = sel[0]
-        p = park_pracownicy[nazwa_parku][i]
-        entry_imie.delete(0, END)
-        entry_imie.insert(0, p.imie_nazwisko)
-        entry_miasto.delete(0, END)
-        entry_miasto.insert(0, p.miasto)
-        button_dodaj.config(text="Zapisz", command=lambda: zapisz(i))
-
-    def zapisz(i):
-        imie = entry_imie.get().strip()
-        miasto = entry_miasto.get().strip()
-        if not imie or not miasto:
-            return
-        if park_pracownicy[nazwa_parku][i].marker:
-            park_pracownicy[nazwa_parku][i].marker.delete()
-        park_pracownicy[nazwa_parku][i] = Pracownik(imie, miasto, nazwa_parku)
-        odswiez()
-        entry_imie.delete(0, END)
-        entry_miasto.delete(0, END)
-        button_dodaj.config(text="Dodaj pracownika", command=dodaj)
-
-    def pokaz_na_mapie_wszystkich():
-        pracownicy = park_pracownicy[nazwa_parku]
-        if not pracownicy:
-            return
-        for p in pracownicy:
-            if p.marker:
-                p.marker.delete()
-            p.marker = map_widget.set_marker(p.latitude, p.longitude, text=f"{p.imie_nazwisko}\n({p.miasto})")
-        lat = sum(p.latitude for p in pracownicy) / len(pracownicy)
-        lon = sum(p.longitude for p in pracownicy) / len(pracownicy)
-        map_widget.set_position(lat, lon)
-        map_widget.set_zoom(8)
-
-    entry_imie = Entry(okno, width=40)
-    entry_imie.pack()
-    entry_imie.insert(0, "Imię i nazwisko")
-
-    entry_miasto = Entry(okno, width=40)
-    entry_miasto.pack()
-    entry_miasto.insert(0, "Miasto")
-
-    button_dodaj = Button(okno, text="Dodaj pracownika", command=dodaj)
-    button_dodaj.pack(pady=2)
-
-    Button(okno, text="Usuń pracownika", command=usun).pack(pady=2)
-    Button(okno, text="Edytuj pracownika", command=edytuj).pack(pady=2)
-    Button(okno, text="Pokaż wszystkich na mapie", command=pokaz_na_mapie_wszystkich).pack(pady=4)
-
-    odswiez()
 
 # === GUI ===
 root = Tk()
-root.title("Parki Narodowe – Mapa i Pracownicy")
+root.title("Parki Narodowe – Mapa i Zarządzanie")
 root.geometry("1200x700")
 
 ramka_lista = Frame(root)
@@ -232,9 +245,10 @@ Label(ramka_lista, text="Lista parków narodowych").pack()
 listbox_parki = Listbox(ramka_lista, width=40, height=20)
 listbox_parki.pack()
 Button(ramka_lista, text="Pokaż na mapie", command=pokaz_na_mapie).pack(pady=2)
-Button(ramka_lista, text="Usuń park", command=lambda: usun_park()).pack(pady=2)
-Button(ramka_lista, text="Edytuj park", command=lambda: edytuj_park()).pack(pady=2)
-Button(ramka_lista, text="Pracownicy", command=otworz_panel_pracownikow).pack(pady=5)
+Button(ramka_lista, text="Usuń park", command=usun_park).pack(pady=2)
+Button(ramka_lista, text="Edytuj park", command=edytuj_park).pack(pady=2)
+Button(ramka_lista, text="Pracownicy", command=lambda: otworz_panel_osob("Pracownicy", Pracownik, park_pracownicy)).pack(pady=5)
+Button(ramka_lista, text="Klienci", command=lambda: otworz_panel_osob("Klienci", Klient, park_klienci)).pack(pady=5)
 
 Label(ramka_formularz, text="Dodaj park (nazwa z Wikipedii):").pack()
 entry_nazwa = Entry(ramka_formularz, width=40)
